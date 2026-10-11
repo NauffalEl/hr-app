@@ -1,0 +1,5 @@
+PRD.md
+RUNLOG.md
+node_modules/
+.env*
+.next/

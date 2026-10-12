@@ -1,0 +1,218 @@
+// HR App — skema database (Supabase Postgres)
+// Sumber kebenaran DDL: database/schema.sql (diaplikasikan via SQL Editor/psql).
+// Prisma connect via service key; semua tabel RLS deny-all.
+// Kolom CHECK (self-ref atasan, saldo >= 0, format key template) hanya di schema.sql.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public", "auth"]
+}
+
+enum UserRole {
+  HR_ADMIN
+  MANAGER
+  KARYAWAN
+
+  @@map("user_role")
+}
+
+enum ContractType {
+  PKWT
+  PKWTT
+  MAGANG
+
+  @@map("contract_type")
+}
+
+enum ContractStatus {
+  AKTIF
+  BERAKHIR
+  UPCOMING
+
+  @@map("contract_status")
+}
+
+enum LeaveType {
+  TAHUNAN
+  SAKIT
+  IZIN
+
+  @@map("leave_type")
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+
+  @@map("leave_status")
+}
+
+enum ReminderMilestone {
+  H30
+  H14
+  H7
+
+  @@map("reminder_milestone")
+}
+
+enum ReminderStatus {
+  SENT
+  FAILED
+
+  @@map("reminder_status")
+}
+
+/// auth.users dikelola Supabase Auth — model ini hanya dipakai untuk relasi FK users.id.
+model AuthUser {
+  id    String @id @db.Uuid
+  users User?
+
+  @@schema("auth")
+  @@map("users")
+}
+
+model User {
+  id        String   @id @db.Uuid
+  email     String   @unique @db.VarChar(255)
+  role      UserRole
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  auth     AuthUser? @relation(fields: [id], references: [id], onDelete: Cascade)
+  employee Employee?
+
+  @@map("users")
+}
+
+model Employee {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String?      @unique @map("user_id") @db.Uuid
+  nik            String       @unique @db.VarChar(32)
+  nama           String       @db.VarChar(128)
+  email          String       @unique @db.VarChar(255)
+  jabatan        String       @db.VarChar(128)
+  departemen     String       @db.VarChar(128)
+  tanggalMasuk   DateTime     @map("tanggal_masuk") @db.Date
+  statusKontrak  ContractType @map("status_kontrak")
+  atasanId       String?      @map("atasan_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user                  User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  atasan                Employee?      @relation("EmployeeAtasan", fields: [atasanId], references: [id], onDelete: SetNull)
+  bawahan               Employee[]     @relation("EmployeeAtasan")
+  approvedLeaveRequests LeaveRequest[] @relation("LeaveApprover")
+  contracts             Contract[]
+  leaveBalances         LeaveBalance[]
+  leaveRequests         LeaveRequest[]
+
+  @@index([userId])
+  @@index([atasanId])
+  @@map("employees")
+}
+
+// Perpanjangan kontrak = INSERT row BARU (status UPCOMING/AKTIF), bukan UPDATE row lama.
+// PKWTT: tanggalAkhir null.
+model Contract {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId   String         @map("employee_id") @db.Uuid
+  jenis        ContractType
+  tanggalMulai DateTime       @map("tanggal_mulai") @db.Date
+  tanggalAkhir DateTime?      @map("tanggal_akhir") @db.Date
+  status       ContractStatus @default(AKTIF)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employee     Employee                @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  reminderLogs ContractReminderLog[]
+
+  @@index([employeeId])
+  @@map("contracts")
+}
+
+// Approver wajib atasan employee (dicek di aplikasi, bukan DB).
+model LeaveRequest {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId      String       @map("employee_id") @db.Uuid
+  jenis           LeaveType
+  tanggalMulai    DateTime     @map("tanggal_mulai") @db.Date
+  tanggalAkhir    DateTime     @map("tanggal_akhir") @db.Date
+  alasan          String       @db.Text
+  status          LeaveStatus  @default(PENDING)
+  approverId      String?      @map("approver_id") @db.Uuid
+  catatanApprover String?      @map("catatan_approver") @db.Text
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  approver Employee? @relation("LeaveApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@map("leave_requests")
+}
+
+/// Saldo hanya untuk jenis TAHUNAN. CHECK (saldo_awal >= 0, terpakai >= 0) di schema.sql.
+model LeaveBalance {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  tahun      Int
+  saldoAwal  Int      @map("saldo_awal")
+  terpakai   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, tahun])
+  @@index([employeeId])
+  @@map("leave_balances")
+}
+
+// Idempoten: satu log per (kontrak, milestone, tanggal_mulai_periode).
+model ContractReminderLog {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId          String             @map("contract_id") @db.Uuid
+  milestone           ReminderMilestone
+  tanggalMulaiPeriode DateTime           @map("tanggal_mulai_periode") @db.Date
+  status              ReminderStatus
+  kirimKe             String             @map("kirim_ke") @db.Text
+  error               String?            @db.Text
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz()
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, milestone, tanggalMulaiPeriode])
+  @@index([contractId])
+  @@map("contract_reminder_logs")
+}
+
+/// `key` wajib cocok ^[a-z0-9_]{1,64}$ (CHECK constraint di schema.sql).
+model EmailTemplate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String   @unique @db.VarChar(64)
+  subject   String   @db.VarChar(255)
+  bodyHtml  String   @map("body_html") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("email_templates")
+}
+
+model DocumentTemplate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String   @unique @db.VarChar(64)
+  name      String   @db.VarChar(128)
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("document_templates")
+}

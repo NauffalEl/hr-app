@@ -4,7 +4,8 @@
 // Kolom CHECK (self-ref atasan, saldo >= 0, format key template) hanya di schema.sql.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
@@ -19,6 +20,7 @@ enum UserRole {
   KARYAWAN
 
   @@map("user_role")
+  @@schema("public")
 }
 
 enum ContractType {
@@ -27,6 +29,7 @@ enum ContractType {
   MAGANG
 
   @@map("contract_type")
+  @@schema("public")
 }
 
 enum ContractStatus {
@@ -35,6 +38,7 @@ enum ContractStatus {
   UPCOMING
 
   @@map("contract_status")
+  @@schema("public")
 }
 
 enum LeaveType {
@@ -43,6 +47,7 @@ enum LeaveType {
   IZIN
 
   @@map("leave_type")
+  @@schema("public")
 }
 
 enum LeaveStatus {
@@ -52,6 +57,7 @@ enum LeaveStatus {
   CANCELLED
 
   @@map("leave_status")
+  @@schema("public")
 }
 
 enum ReminderMilestone {
@@ -60,6 +66,7 @@ enum ReminderMilestone {
   H7
 
   @@map("reminder_milestone")
+  @@schema("public")
 }
 
 enum ReminderStatus {
@@ -67,6 +74,7 @@ enum ReminderStatus {
   FAILED
 
   @@map("reminder_status")
+  @@schema("public")
 }
 
 /// auth.users dikelola Supabase Auth — model ini hanya dipakai untuk relasi FK users.id.
@@ -90,6 +98,7 @@ model User {
   employee Employee?
 
   @@map("users")
+  @@schema("public")
 }
 
 model Employee {
@@ -117,6 +126,7 @@ model Employee {
   @@index([userId])
   @@index([atasanId])
   @@map("employees")
+  @@schema("public")
 }
 
 // Perpanjangan kontrak = INSERT row BARU (status UPCOMING/AKTIF), bukan UPDATE row lama.
@@ -136,6 +146,7 @@ model Contract {
 
   @@index([employeeId])
   @@map("contracts")
+  @@schema("public")
 }
 
 // Approver wajib atasan employee (dicek di aplikasi, bukan DB).
@@ -157,6 +168,7 @@ model LeaveRequest {
 
   @@index([employeeId])
   @@map("leave_requests")
+  @@schema("public")
 }
 
 /// Saldo hanya untuk jenis TAHUNAN. CHECK (saldo_awal >= 0, terpakai >= 0) di schema.sql.
@@ -174,6 +186,7 @@ model LeaveBalance {
   @@unique([employeeId, tahun])
   @@index([employeeId])
   @@map("leave_balances")
+  @@schema("public")
 }
 
 // Idempoten: satu log per (kontrak, milestone, tanggal_mulai_periode).
@@ -192,6 +205,7 @@ model ContractReminderLog {
   @@unique([contractId, milestone, tanggalMulaiPeriode])
   @@index([contractId])
   @@map("contract_reminder_logs")
+  @@schema("public")
 }
 
 /// `key` wajib cocok ^[a-z0-9_]{1,64}$ (CHECK constraint di schema.sql).
@@ -204,6 +218,7 @@ model EmailTemplate {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   @@map("email_templates")
+  @@schema("public")
 }
 
 model DocumentTemplate {
@@ -215,4 +230,5 @@ model DocumentTemplate {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   @@map("document_templates")
+  @@schema("public")
 }

@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-700;
+  }
+}
+
+/* Angka (saldo, sisa hari, NIK) rapi — §2.2 */
+.num {
+  font-variant-numeric: tabular-nums;
+}
